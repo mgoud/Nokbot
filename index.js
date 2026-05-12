@@ -10,19 +10,10 @@ const { Client, GatewayIntentBits, Events } = require("discord.js");
 
 console.log("--- BOT STARTING UP ---");
 
-// 1. CONFIG LOADER
-let config;
-try {
-  const rawData = fs.readFileSync("config.json", "utf8").replace(/^\uFEFF/, "");
-  config = JSON.parse(rawData);
-} catch (e) {
-  console.error("FATAL: Could not read config.json.");
-  process.exit(1);
-}
-
-const DISCORD_TOKEN = String(config.DISCORD_TOKEN || "").replace(/["']/g, "").trim();
-const CHANNEL_ID = String(config.CHANNEL_ID || "").replace(/["']/g, "").trim();
-const SHEET_URL = String(config.SHEET_URL || "").replace(/["']/g, "").trim();
+// 1. CONFIG LOADER - Read from environment variables
+const DISCORD_TOKEN = String(process.env.DISCORD_TOKEN || "").trim();
+const CHANNEL_ID = String(process.env.CHANNEL_ID || "").trim();
+const SHEET_URL = String(process.env.SHEET_URL || "").trim();
 
 const MESSAGE_FILE = "message.json";
 const UPDATE_EVERY_MS = 2 * 60 * 1000;
@@ -197,5 +188,5 @@ if (DISCORD_TOKEN.length > 50) {
     console.error("❌ LOGIN ERROR:", err.message);
   });
 } else {
-  console.error("❌ INVALID TOKEN in config.json");
+  console.error("❌ INVALID TOKEN in environment variables");
 }
