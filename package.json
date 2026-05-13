@@ -11,7 +11,6 @@
   "author": "mgoud",
   "license": "MIT",
   "dependencies": {
-    "discord.js": "^14.14.1",
-    "pureimage": "^0.4.18"
+    "discord.js": "^14.14.1"
   }
 }
