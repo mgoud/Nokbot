@@ -50,29 +50,29 @@ async function generateImage(data) {
   const players = data.players || [];
   const bets = data.bets || [];
   
-  // Calculate width based on number of players
-  const width = 700 + (players.length * 75);
-  const height = 120 + (Math.max(bets.length, 1) * 32);
+  // 1. Calculate dimensions
+  const width = 800 + (players.length * 75);
+  const height = 150 + (Math.max(bets.length, 1) * 35);
 
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
-  // Background
+  // 2. Background
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
 
-  // Title
+  // 3. Title & Time
   ctx.fillStyle = "#000000";
-  ctx.font = "bold 18px sans-serif";
-  ctx.fillText("Torn Bookie Tracker", 20, 35);
-  ctx.font = "11px sans-serif";
-  ctx.fillText(`Last Update: ${getTornTime()}`, 20, 55);
+  ctx.font = "bold 20px sans-serif";
+  ctx.fillText("Torn Bookie Tracker", 20, 40);
+  ctx.font = "12px sans-serif";
+  ctx.fillText(`Last Update: ${getTornTime()}`, 20, 65);
 
-  let curY = 80;
+  let curY = 100;
   let curX = 20;
-  const colWidths = [300, 220, 80]; // Match, Pick, Odds
+  const colWidths = [350, 250, 80];
 
-  // Headers
+  // 4. Draw Headers
   const headers = ["Match", "Pick", "Odds", ...players];
   headers.forEach((h, i) => {
     const w = colWidths[i] || 75;
@@ -80,9 +80,45 @@ async function generateImage(data) {
     ctx.fillRect(curX, curY, w, 30);
     ctx.strokeStyle = "#000000";
     ctx.strokeRect(curX, curY, w, 30);
-    drawText(ctx, h, curX, curY, w, 30, "center", true);
+    drawSafeText(ctx, h, curX, curY, w, 30, "center");
     curX += w;
   });
+
+  // 5. Draw Rows
+  curY += 30;
+  if (bets.length === 0) {
+    drawSafeText(ctx, "No active bets found in sheet.", 20, curY, width - 40, 30, "left");
+  } else {
+    bets.forEach((bet, rowIndex) => {
+      curX = 20;
+      const rowData = [
+        bet.eventName || "—",
+        bet.selectionName || "—",
+        String(bet.odds || ""),
+        ...players.map(p => (bet.players && bet.players[p]) ? "YES" : "-")
+      ];
+
+      rowData.forEach((val, i) => {
+        const w = colWidths[i] || 75;
+        ctx.fillStyle = rowIndex % 2 === 0 ? "#ffffff" : "#f9f9f9";
+        ctx.fillRect(curX, curY, w, 30);
+        ctx.strokeStyle = "#000000";
+        ctx.strokeRect(curX, curY, w, 30);
+        const align = i >= 2 ? "center" : "left";
+        drawSafeText(ctx, String(val).slice(0, 50), curX, curY, w, 30, align);
+        curX += w;
+      });
+      curY += 30;
+    });
+  }
+
+  // 6. SAVE IMAGE (The Fix for @napi-rs/canvas)
+  const outPath = path.join(__dirname, "tracker.png");
+  const buffer = canvas.toBuffer('image/png');
+  fs.writeFileSync(outPath, buffer);
+  
+  return outPath; 
+}
 
   // Rows
   curY += 30;
