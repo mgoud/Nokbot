@@ -7,7 +7,7 @@ dns.setDefaultResultOrder("ipv4first");
 
 const fs = require("fs");
 const path = require("path");
-const PImage = require("pureimage");
+
 
 const {
   Client,
