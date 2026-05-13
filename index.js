@@ -26,12 +26,15 @@ const MESSAGE_FILE = "message.json";
 const UPDATE_EVERY_MS = 60 * 60 * 1000; // 1 hour
 
 // 2. FONT SETUP
-// Note: Ensure DejaVuSans.ttf is in your project folder!
+// Note: Ensure DejaVuSans.ttf is in your project folder on GitHub/Railway!
 const FONT_PATH = path.join(__dirname, "DejaVuSans.ttf"); 
+
 if (fs.existsSync(FONT_PATH)) {
+    // This is the correct way to register fonts with the 'canvas' library
     registerFont(FONT_PATH, { family: "TrackerFont" });
+    console.log("✅ Font loaded successfully");
 } else {
-    console.warn("⚠️ DejaVuSans.ttf not found in root. Falling back to system fonts.");
+    console.warn("⚠️ DejaVuSans.ttf not found in project root. Using system default font.");
 }
 
 // 3. CLIENT INITIALIZATION
