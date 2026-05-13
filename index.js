@@ -10,20 +10,22 @@ const { Client, GatewayIntentBits, Events } = require("discord.js");
 console.log("--- BOT STARTING UP ---");
 
 // 1. CONFIG
-const DISCORD_TOKEN = String(process.env.DISCORD_TOKEN || "").trim();
-const CHANNEL_ID = String(process.env.CHANNEL_ID || "").trim();
-const SHEET_URL = String(process.env.SHEET_URL || "").trim();
-const MESSAGE_FILE = "message.json";
-const UPDATE_EVERY_MS = 60 * 60 * 1000;
+const DISCORD_TOKEN = (process.env.DISCORD_TOKEN || "").trim();
+const CHANNEL_ID = (process.env.CHANNEL_ID || "").trim();
+const SHEET_URL = (process.env.SHEET_URL || "").trim();
+const MESSAGE_FILE = path.join(__dirname, "message.json");
 
-// 2. CLIENT SETUP
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
 });
 
-// 3. HELPERS
+// 2. HELPERS
 function getTornTime() {
-  return new Date().toLocaleString("en-GB", { timeZone: "UTC", hour12: false });
+  return new Date().toLocaleString("en-GB", { timeZone: "UTC", hour12: false }) + " TCT";
 }
 
 async function fetchSheet() {
@@ -32,60 +34,79 @@ async function fetchSheet() {
   return await res.json();
 }
 
-function drawText(ctx, text, x, y, w, h, align = "left", bold = false) {
+function drawText(ctx, text, x, y, w, h, align = "left", isBold = false) {
   ctx.fillStyle = "#000000";
-  ctx.font = bold ? "bold 15pt sans-serif" : "12pt sans-serif";
+  ctx.font = isBold ? "bold 14px sans-serif" : "12px sans-serif";
+  
   let tx = x + 8;
-  if (align === "center") tx = x + (w - ctx.measureText(text).width) / 2;
-  ctx.fillText(text, tx, y + h / 2 + 6);
+  if (align === "center") {
+    const tw = ctx.measureText(text).width;
+    tx = x + (w - tw) / 2;
+  }
+  ctx.fillText(text, tx, y + (h / 2) + 5);
 }
 
 async function generateImage(data) {
   const players = data.players || [];
   const bets = data.bets || [];
-  const width = 800 + (players.length * 70);
-  const height = 150 + (Math.max(bets.length, 1) * 30);
+  
+  // Calculate width based on number of players
+  const width = 700 + (players.length * 75);
+  const height = 120 + (Math.max(bets.length, 1) * 32);
 
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
+  // Background
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
 
+  // Title
   ctx.fillStyle = "#000000";
-  ctx.font = "bold 20pt sans-serif";
-  ctx.fillText("Torn Bookie Tracker", 20, 40);
-  ctx.font = "10pt sans-serif";
-  ctx.fillText(`Updated: ${getTornTime()} TCT`, 20, 60);
+  ctx.font = "bold 18px sans-serif";
+  ctx.fillText("Torn Bookie Tracker", 20, 35);
+  ctx.font = "11px sans-serif";
+  ctx.fillText(`Last Update: ${getTornTime()}`, 20, 55);
 
-  let y = 80;
-  let x = 20;
-  const colW = [350, 250, 80];
+  let curY = 80;
+  let curX = 20;
+  const colWidths = [300, 220, 80]; // Match, Pick, Odds
 
   // Headers
-  ["Match", "Pick", "Odds", ...players].forEach((label, i) => {
-    const w = colW[i] || 70;
+  const headers = ["Match", "Pick", "Odds", ...players];
+  headers.forEach((h, i) => {
+    const w = colWidths[i] || 75;
     ctx.fillStyle = "#d9eaf7";
-    ctx.fillRect(x, y, w, 30);
-    ctx.strokeRect(x, y, w, 30);
-    drawText(ctx, label.slice(0, 8), x, y, w, 30, "center", true);
-    x += w;
+    ctx.fillRect(curX, curY, w, 30);
+    ctx.strokeStyle = "#000000";
+    ctx.strokeRect(curX, curY, w, 30);
+    drawText(ctx, h, curX, curY, w, 30, "center", true);
+    curX += w;
   });
 
   // Rows
-  y += 30;
-  bets.forEach((bet, i) => {
-    x = 20;
-    const vals = [bet.eventName, bet.selectionName, String(bet.odds), ...players.map(p => bet.players?.[p] ? "Y" : "-")];
-    vals.forEach((v, j) => {
-      const w = colW[j] || 70;
-      ctx.fillStyle = i % 2 === 0 ? "#ffffff" : "#f2f2f2";
-      ctx.fillRect(x, y, w, 30);
-      ctx.strokeRect(x, y, w, 30);
-      drawText(ctx, String(v || "").slice(0, 40), x, y, w, 30, j > 2 ? "center" : "left");
-      x += w;
+  curY += 30;
+  bets.forEach((bet, rowIndex) => {
+    curX = 20;
+    const rowData = [
+      bet.eventName || "Unknown",
+      bet.selectionName || "Unknown",
+      String(bet.odds || ""),
+      ...players.map(p => (bet.players && bet.players[p]) ? "YES" : "-")
+    ];
+
+    rowData.forEach((val, i) => {
+      const w = colWidths[i] || 75;
+      ctx.fillStyle = rowIndex % 2 === 0 ? "#ffffff" : "#f9f9f9";
+      ctx.fillRect(curX, curY, w, 30);
+      ctx.strokeStyle = "#000000";
+      ctx.strokeRect(curX, curY, w, 30);
+      
+      const align = i >= 2 ? "center" : "left";
+      drawText(ctx, String(val).slice(0, 45), curX, curY, w, 30, align, false);
+      curX += w;
     });
-    y += 30;
+    curY += 30;
   });
 
   const outPath = path.join(__dirname, "tracker.png");
@@ -94,35 +115,50 @@ async function generateImage(data) {
   return new Promise(res => out.on('finish', () => res(outPath)));
 }
 
-// 4. MAIN LOGIC
-async function update() {
+// 3. MAIN LOGIC
+async function runUpdate() {
   try {
+    console.log("🔄 Updating Tracker...");
     const data = await fetchSheet();
     const imgPath = await generateImage(data);
     const channel = await client.channels.fetch(CHANNEL_ID);
     
-    // Cleanup old messages
-    const saved = JSON.parse(fs.readFileSync(MESSAGE_FILE, "utf8").catch(() => "{}"));
-    if (saved.lastId) {
-      try { (await channel.messages.fetch(saved.lastId)).delete(); } catch(e) {}
+    // Clean up previous post
+    let saved = {};
+    if (fs.existsSync(MESSAGE_FILE)) {
+      saved = JSON.parse(fs.readFileSync(MESSAGE_FILE, "utf8"));
     }
 
-    const msg = await channel.send({ content: `**Tracker Updated:** ${getTornTime()} TCT`, files: [imgPath] });
+    if (saved.lastId) {
+      try {
+        const old = await channel.messages.fetch(saved.lastId);
+        await old.delete();
+      } catch (e) { /* ignore if already deleted */ }
+    }
+
+    const msg = await channel.send({
+      content: `**Torn Bookie Tracker** | Updated: ${getTornTime()}`,
+      files: [imgPath]
+    });
+
     fs.writeFileSync(MESSAGE_FILE, JSON.stringify({ lastId: msg.id }));
-    console.log("✅ Posted to Discord");
+    console.log("✅ Success!");
   } catch (err) {
-    console.error("❌ Error:", err.message);
+    console.error("❌ Tracker Error:", err.message);
   }
 }
 
 client.once(Events.ClientReady, () => {
   console.log(`✅ Online as ${client.user.tag}`);
-  update();
-  setInterval(update, UPDATE_EVERY_MS);
+  runUpdate();
+  setInterval(runUpdate, 60 * 60 * 1000); // Hourly
 });
 
 client.on(Events.MessageCreate, m => {
-  if (m.content === "!update") update() && m.reply("Updating...");
+  if (m.content === "!update") {
+    m.reply("Manual update triggered...");
+    runUpdate();
+  }
 });
 
-client.login(DISCORD_TOKEN);
+client.login(DISCORD_TOKEN).catch(e => console.error("❌ Login Failed:", e.message));
