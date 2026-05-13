@@ -3,17 +3,28 @@ dns.setDefaultResultOrder("ipv4first");
 
 const fs = require("fs");
 const path = require("path");
-const { createCanvas } = require("@napi-rs/canvas");
+const { createCanvas, GlobalFonts } = require("@napi-rs/canvas");
 const fetch = require("node-fetch");
 const { Client, GatewayIntentBits, Events } = require("discord.js");
 
-console.log("--- BOT STARTING UP: VERSION 4.0 FINAL ---");
+console.log("--- BOT STARTING UP: VERSION 5.0 (FONT FIX) ---");
 
 // 1. CONFIG
 const DISCORD_TOKEN = (process.env.DISCORD_TOKEN || "").trim();
 const CHANNEL_ID = (process.env.CHANNEL_ID || "").trim();
 const SHEET_URL = (process.env.SHEET_URL || "").trim();
 const MESSAGE_FILE = path.join(__dirname, "message.json");
+
+// Register Font from your uploaded file
+const FONT_FILENAME = "Roboto-VariableFont_wdth,wght.ttf";
+const FONT_PATH = path.join(__dirname, "fonts", FONT_FILENAME);
+
+if (fs.existsSync(FONT_PATH)) {
+    GlobalFonts.registerFromPath(FONT_PATH, "TornFont");
+    console.log("✅ Font registered successfully: TornFont");
+} else {
+    console.log("⚠️ FONT NOT FOUND! Checked path: " + FONT_PATH);
+}
 
 const client = new Client({
   intents: [
@@ -28,9 +39,11 @@ function getTornTime() {
   return new Date().toLocaleString("en-GB", { timeZone: "UTC", hour12: false }) + " TCT";
 }
 
-function drawSafeText(ctx, text, x, y, w, h, align = "left") {
+function drawSafeText(ctx, text, x, y, w, h, align = "left", isBold = false) {
   ctx.fillStyle = "#000000";
-  ctx.font = "14px sans-serif";
+  // We use the alias "TornFont" we registered above
+  ctx.font = isBold ? "bold 14px TornFont" : "14px TornFont";
+  
   let tx = x + 8;
   if (align === "center") {
     const tw = ctx.measureText(text).width;
@@ -49,19 +62,22 @@ async function generateImage(data) {
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
+  // Background
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
 
+  // Title
   ctx.fillStyle = "#000000";
-  ctx.font = "bold 20px sans-serif";
+  ctx.font = "bold 20px TornFont";
   ctx.fillText("Torn Bookie Tracker", 20, 40);
-  ctx.font = "12px sans-serif";
+  ctx.font = "12px TornFont";
   ctx.fillText(`Last Update: ${getTornTime()}`, 20, 65);
 
   let curY = 100;
   let curX = 20;
   const colWidths = [350, 250, 80];
 
+  // Headers
   const headers = ["Match", "Pick", "Odds", ...players];
   headers.forEach((h, i) => {
     const w = colWidths[i] || 75;
@@ -69,10 +85,11 @@ async function generateImage(data) {
     ctx.fillRect(curX, curY, w, 30);
     ctx.strokeStyle = "#000000";
     ctx.strokeRect(curX, curY, w, 30);
-    drawSafeText(ctx, h, curX, curY, w, 30, "center");
+    drawSafeText(ctx, h, curX, curY, w, 30, "center", true);
     curX += w;
   });
 
+  // Rows
   curY += 30;
   if (bets.length === 0) {
     drawSafeText(ctx, "No active bets found in sheet.", 20, curY, width - 40, 30, "left");
