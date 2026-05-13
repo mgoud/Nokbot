@@ -1,5 +1,5 @@
 // =============================================================
-// TORN BOT - IMAGE TRACKER VERSION (FIXED CANVAS VERSION)
+// TORN BOT - IMAGE TRACKER VERSION (STABLE CANVAS)
 // =============================================================
 
 const dns = require("node:dns");
@@ -7,7 +7,7 @@ dns.setDefaultResultOrder("ipv4first");
 
 const fs = require("fs");
 const path = require("path");
-const { createCanvas, registerFont } = require("canvas"); // FIX: Switched to Canvas
+const { createCanvas } = require("canvas");
 
 const {
   Client,
@@ -17,25 +17,16 @@ const {
 
 console.log("--- BOT STARTING UP ---");
 
-// 1. CONFIG LOADER - environment variables
+// 1. CONFIG LOADER
 const DISCORD_TOKEN = String(process.env.DISCORD_TOKEN || "").trim();
 const CHANNEL_ID = String(process.env.CHANNEL_ID || "").trim();
 const SHEET_URL = String(process.env.SHEET_URL || "").trim();
 
 const MESSAGE_FILE = "message.json";
-const UPDATE_EVERY_MS = 60 * 60 * 1000; // 1 hour
+const UPDATE_EVERY_MS = 60 * 60 * 1000;
 
-// 2. FONT SETUP
-// Note: Ensure DejaVuSans.ttf is in your project folder on GitHub/Railway!
-const FONT_PATH = path.join(__dirname, "DejaVuSans.ttf"); 
-
-if (fs.existsSync(FONT_PATH)) {
-    // This is the correct way to register fonts with the 'canvas' library
-    registerFont(FONT_PATH, { family: "TrackerFont" });
-    console.log("✅ Font loaded successfully");
-} else {
-    console.warn("⚠️ DejaVuSans.ttf not found in project root. Using system default font.");
-}
+// 2. FONT CONFIG (Using System Default)
+const TRACKER_FONT = "sans-serif";
 
 // 3. CLIENT INITIALIZATION
 const client = new Client({
@@ -48,11 +39,7 @@ const client = new Client({
 
 // 4. HELPER FUNCTIONS
 function loadMessageData() {
-  try {
-    return JSON.parse(fs.readFileSync(MESSAGE_FILE, "utf8"));
-  } catch {
-    return {};
-  }
+  try { return JSON.parse(fs.readFileSync(MESSAGE_FILE, "utf8")); } catch { return {}; }
 }
 
 function saveMessageData(data) {
@@ -60,6 +47,7 @@ function saveMessageData(data) {
 }
 
 async function fetchSheetData() {
+  const fetch = require("node-fetch");
   const res = await fetch(SHEET_URL);
   if (!res.ok) throw new Error(`Sheet HTTP ${res.status}`);
   return await res.json();
@@ -71,35 +59,28 @@ function shortenText(text, max) {
 }
 
 function getTornTimeString() {
-  const now = new Date();
-  return now.toLocaleString("en-GB", {
-    timeZone: "UTC",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
+  return new Date().toLocaleString("en-GB", {
+    timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
   });
 }
 
 function drawCellText(ctx, text, x, y, w, h, align = "left", bold = false) {
   ctx.fillStyle = "#000000";
-  ctx.font = bold ? "bold 18pt TrackerFont" : "14pt TrackerFont";
+  ctx.font = bold ? `bold 16pt ${TRACKER_FONT}` : `13pt ${TRACKER_FONT}`;
 
   const safeText = String(text || "");
   let tx = x + 8;
 
   if (align === "center") {
-    const metrics = ctx.measureText(safeText);
-    tx = x + (w - metrics.width) / 2;
+    const m = ctx.measureText(safeText);
+    tx = x + (w - m.width) / 2;
   } else if (align === "right") {
-    const metrics = ctx.measureText(safeText);
-    tx = x + w - metrics.width - 8;
+    const m = ctx.measureText(safeText);
+    tx = x + w - m.width - 8;
   }
 
-  ctx.fillText(safeText, tx, y + h / 2 + 7); // Adjusted vertical offset for Canvas
+  ctx.fillText(safeText, tx, y + h / 2 + 7);
 }
 
 async function generateTrackerImage(data) {
@@ -110,131 +91,95 @@ async function generateTrackerImage(data) {
   const titleH = 50;
   const headerH = 34;
   const rowH = 30;
-
-  const matchW = 390;
-  const pickW = 280;
-  const oddsW = 70;
-  const playerW = 70;
+  const matchW = 390, pickW = 280, oddsW = 70, playerW = 70;
 
   const width = margin * 2 + matchW + pickW + oddsW + (players.length * playerW);
   const height = margin * 2 + titleH + headerH + Math.max(bets.length, 1) * rowH + 10;
 
-  // FIX: Create canvas using the canvas library
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
-  // Background
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
 
-  // Title
   ctx.fillStyle = "#000000";
-  ctx.font = "20pt TrackerFont";
+  ctx.font = `20pt ${TRACKER_FONT}`;
   ctx.fillText("Torn Bookie Tracker", margin, margin + 22);
-
-  ctx.font = "10pt TrackerFont";
+  ctx.font = `10pt ${TRACKER_FONT}`;
   ctx.fillText(`Updated: ${getTornTimeString()} TCT`, margin, margin + 40);
 
   let y = margin + titleH;
-
   const cols = [
-    { key: "match", label: "Match", width: matchW },
-    { key: "pick", label: "Pick", width: pickW },
-    { key: "odds", label: "Odds", width: oddsW },
-    ...players.map(p => ({
-      key: p,
-      label: p === "Nokian" ? "Nok" : p === "ReggieNoble" ? "Reg" : shortenText(p, 4),
-      width: playerW
-    }))
+    { label: "Match", width: matchW },
+    { label: "Pick", width: pickW },
+    { label: "Odds", width: oddsW },
+    ...players.map(p => ({ label: p.length > 5 ? p.slice(0,4) : p, width: playerW }))
   ];
 
-  // Header row
   let x = margin;
   for (const col of cols) {
     ctx.fillStyle = "#d9eaf7";
     ctx.fillRect(x, y, col.width, headerH);
     ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 1;
     ctx.strokeRect(x, y, col.width, headerH);
     drawCellText(ctx, col.label, x, y, col.width, headerH, "center", true);
     x += col.width;
   }
 
   y += headerH;
-
-  // Data rows
   if (!bets.length) {
-    ctx.strokeStyle = "#000000";
-    ctx.strokeRect(margin, y, width - margin * 2, rowH);
     drawCellText(ctx, "No active bets.", margin, y, width - margin * 2, rowH);
   } else {
     bets.forEach((bet, i) => {
-      const placed = bet.players || {};
       const rowColor = i % 2 === 0 ? "#ffffff" : "#f6f6f6";
       const rowValues = [
         shortenText(bet.eventName, 50),
         shortenText(bet.selectionName, 40),
         String(bet.odds || ""),
-        ...players.map(player => placed[player] ? "Y" : "-")
+        ...players.map(p => (bet.players && bet.players[p]) ? "Y" : "-")
       ];
 
-      let rowX = margin;
-      cols.forEach((col, idx) => {
+      let rx = margin;
+      rowValues.forEach((val, idx) => {
         ctx.fillStyle = rowColor;
-        ctx.fillRect(rowX, y, col.width, rowH);
+        ctx.fillRect(rx, y, cols[idx].width, rowH);
         ctx.strokeStyle = "#000000";
-        ctx.strokeRect(rowX, y, col.width, rowH);
-        const align = idx >= 3 ? "center" : "left";
-        drawCellText(ctx, rowValues[idx], rowX, y, col.width, rowH, align);
-        rowX += col.width;
+        ctx.strokeRect(rx, y, cols[idx].width, rowH);
+        drawCellText(ctx, val, rx, y, cols[idx].width, rowH, idx >= 3 ? "center" : "left");
+        rx += cols[idx].width;
       });
       y += rowH;
     });
   }
 
   const outPath = path.join(__dirname, "tracker.png");
-  // FIX: Save using canvas stream
   const out = fs.createWriteStream(outPath);
-  const stream = canvas.createPNGStream();
-  stream.pipe(out);
-  
-  return new Promise((resolve) => {
-    out.on('finish', () => resolve(outPath));
-  });
+  canvas.createPNGStream().pipe(out);
+  return new Promise(res => out.on('finish', () => res(outPath)));
 }
-
-// ... rest of your updateTrackerImage, Events, and Login functions remain the same ...
 
 async function updateTrackerImage() {
   try {
-    console.log("Fetching sheet data for image tracker...");
     const data = await fetchSheetData();
     const imgPath = await generateTrackerImage(data);
     const channel = await client.channels.fetch(CHANNEL_ID);
     const saved = loadMessageData();
 
-    const oldIds = [];
-    if (saved.imageMessageId) oldIds.push(saved.imageMessageId);
-    if (saved.messageId) oldIds.push(saved.messageId);
-    if (Array.isArray(saved.messageIds)) oldIds.push(...saved.messageIds);
-
-    for (const id of oldIds) {
+    if (saved.imageMessageId) {
       try {
-        const oldMsg = await channel.messages.fetch(id);
+        const oldMsg = await channel.messages.fetch(saved.imageMessageId);
         await oldMsg.delete();
       } catch (e) {}
     }
 
-    const tornTime = getTornTimeString();
     const newMsg = await channel.send({
-      content: `**Torn Bookie Tracker**\n**Updated:** ${tornTime} TCT`,
+      content: `**Torn Bookie Tracker**\n**Updated:** ${getTornTimeString()} TCT`,
       files: [imgPath]
     });
-
     saveMessageData({ imageMessageId: newMsg.id });
-    console.log("✅ IMAGE TRACKER POSTED");
+    console.log("✅ TRACKER UPDATED");
   } catch (err) {
-    console.error("❌ IMAGE TRACKER UPDATE ERROR:", err.message);
+    console.error("❌ UPDATE ERROR:", err.message);
   }
 }
 
@@ -244,15 +189,12 @@ client.once(Events.ClientReady, async c => {
   setInterval(updateTrackerImage, UPDATE_EVERY_MS);
 });
 
-client.on(Events.MessageCreate, async message => {
-  if (message.author.bot) return;
-  if (message.content.toLowerCase() === "!test") await message.reply("Bot is online! 🚀");
-  if (message.content.toLowerCase() === "!update") {
-    await message.reply("Updating...");
+client.on(Events.MessageCreate, async msg => {
+  if (msg.author.bot) return;
+  if (msg.content === "!update") {
+    await msg.reply("Updating...");
     await updateTrackerImage();
   }
 });
 
-if (DISCORD_TOKEN.length > 50) {
-  client.login(DISCORD_TOKEN).catch(err => console.error("❌ LOGIN ERROR:", err.message));
-}
+client.login(DISCORD_TOKEN).catch(e => console.error("❌ LOGIN ERROR:", e.message));
