@@ -109,10 +109,11 @@ async function generateImage(data) {
     curY += 30;
   });
 
-  const outPath = path.join(__dirname, "tracker.png");
-  const out = fs.createWriteStream(outPath);
-  canvas.createPNGStream().pipe(out);
-  return new Promise(res => out.on('finish', () => res(outPath)));
+ const outPath = path.join(__dirname, "tracker.png");
+  // @napi-rs/canvas uses toBuffer instead of createPNGStream
+  const buffer = canvas.toBuffer('image/png');
+  fs.writeFileSync(outPath, buffer);
+  return outPath;
 }
 
 // 3. MAIN LOGIC
