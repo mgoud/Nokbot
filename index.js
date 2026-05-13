@@ -7,7 +7,7 @@ const { createCanvas } = require("@napi-rs/canvas");
 const fetch = require("node-fetch");
 const { Client, GatewayIntentBits, Events } = require("discord.js");
 
-console.log("--- BOT STARTING UP ---");
+console.log("--- BOT STARTING UP: VERSION 4.0 FINAL ---");
 
 // 1. CONFIG
 const DISCORD_TOKEN = (process.env.DISCORD_TOKEN || "").trim();
@@ -28,16 +28,9 @@ function getTornTime() {
   return new Date().toLocaleString("en-GB", { timeZone: "UTC", hour12: false }) + " TCT";
 }
 
-async function fetchSheet() {
-  const res = await fetch(SHEET_URL);
-  if (!res.ok) throw new Error(`Sheet HTTP ${res.status}`);
-  return await res.json();
-}
-
-function drawText(ctx, text, x, y, w, h, align = "left", isBold = false) {
+function drawSafeText(ctx, text, x, y, w, h, align = "left") {
   ctx.fillStyle = "#000000";
-  ctx.font = isBold ? "bold 14px sans-serif" : "12px sans-serif";
-  
+  ctx.font = "14px sans-serif";
   let tx = x + 8;
   if (align === "center") {
     const tw = ctx.measureText(text).width;
@@ -50,18 +43,15 @@ async function generateImage(data) {
   const players = data.players || [];
   const bets = data.bets || [];
   
-  // 1. Calculate dimensions
   const width = 800 + (players.length * 75);
   const height = 150 + (Math.max(bets.length, 1) * 35);
 
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
-  // 2. Background
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
 
-  // 3. Title & Time
   ctx.fillStyle = "#000000";
   ctx.font = "bold 20px sans-serif";
   ctx.fillText("Torn Bookie Tracker", 20, 40);
@@ -72,7 +62,6 @@ async function generateImage(data) {
   let curX = 20;
   const colWidths = [350, 250, 80];
 
-  // 4. Draw Headers
   const headers = ["Match", "Pick", "Odds", ...players];
   headers.forEach((h, i) => {
     const w = colWidths[i] || 75;
@@ -84,7 +73,6 @@ async function generateImage(data) {
     curX += w;
   });
 
-  // 5. Draw Rows
   curY += 30;
   if (bets.length === 0) {
     drawSafeText(ctx, "No active bets found in sheet.", 20, curY, width - 40, 30, "left");
@@ -112,41 +100,7 @@ async function generateImage(data) {
     });
   }
 
-  // 6. SAVE IMAGE (The Fix for @napi-rs/canvas)
   const outPath = path.join(__dirname, "tracker.png");
-  const buffer = canvas.toBuffer('image/png');
-  fs.writeFileSync(outPath, buffer);
-  
-  return outPath; 
-}
-
-  // Rows
-  curY += 30;
-  bets.forEach((bet, rowIndex) => {
-    curX = 20;
-    const rowData = [
-      bet.eventName || "Unknown",
-      bet.selectionName || "Unknown",
-      String(bet.odds || ""),
-      ...players.map(p => (bet.players && bet.players[p]) ? "YES" : "-")
-    ];
-
-    rowData.forEach((val, i) => {
-      const w = colWidths[i] || 75;
-      ctx.fillStyle = rowIndex % 2 === 0 ? "#ffffff" : "#f9f9f9";
-      ctx.fillRect(curX, curY, w, 30);
-      ctx.strokeStyle = "#000000";
-      ctx.strokeRect(curX, curY, w, 30);
-      
-      const align = i >= 2 ? "center" : "left";
-      drawText(ctx, String(val).slice(0, 45), curX, curY, w, 30, align, false);
-      curX += w;
-    });
-    curY += 30;
-  });
-
- const outPath = path.join(__dirname, "tracker.png");
-  // @napi-rs/canvas uses toBuffer instead of createPNGStream
   const buffer = canvas.toBuffer('image/png');
   fs.writeFileSync(outPath, buffer);
   return outPath;
@@ -156,21 +110,23 @@ async function generateImage(data) {
 async function runUpdate() {
   try {
     console.log("🔄 Updating Tracker...");
-    const data = await fetchSheet();
+    const res = await fetch(SHEET_URL);
+    if (!res.ok) throw new Error(`Sheet HTTP ${res.status}`);
+    const data = await res.json();
+    
     const imgPath = await generateImage(data);
     const channel = await client.channels.fetch(CHANNEL_ID);
     
-    // Clean up previous post
     let saved = {};
     if (fs.existsSync(MESSAGE_FILE)) {
-      saved = JSON.parse(fs.readFileSync(MESSAGE_FILE, "utf8"));
+      try { saved = JSON.parse(fs.readFileSync(MESSAGE_FILE, "utf8")); } catch (e) {}
     }
 
     if (saved.lastId) {
       try {
         const old = await channel.messages.fetch(saved.lastId);
         await old.delete();
-      } catch (e) { /* ignore if already deleted */ }
+      } catch (e) {}
     }
 
     const msg = await channel.send({
@@ -188,7 +144,7 @@ async function runUpdate() {
 client.once(Events.ClientReady, () => {
   console.log(`✅ Online as ${client.user.tag}`);
   runUpdate();
-  setInterval(runUpdate, 60 * 60 * 1000); // Hourly
+  setInterval(runUpdate, 60 * 60 * 1000); 
 });
 
 client.on(Events.MessageCreate, m => {
