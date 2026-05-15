@@ -143,17 +143,36 @@ async function generateImage(data) {
 async function runUpdate() {
   try {
     console.log("🔄 Updating Tracker...");
-    const res = await fetch(SHEET_URL);
-    if (!res.ok) throw new Error(`Sheet HTTP ${res.status}`);
-    const data = await res.json();
     
-    // --- SORTING LOGIC: SOONEST FIRST ---
+    // Google Sheets URLs require following redirects
+    const res = await fetch(SHEET_URL, {
+      redirect: 'follow', // Ensure the bot follows Google's internal redirection
+      headers: { 'Accept': 'application/json' }
+    });
+
+    if (!res.ok) {
+      console.error(`❌ HTTP Error: ${res.status} ${res.statusText}`);
+      throw new Error(`Sheet HTTP ${res.status}`);
+    }
+
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      console.error("❌ Failed to parse JSON. Received:", text.slice(0, 100));
+      throw new Error("Invalid JSON received from Sheet");
+    }
+    
+    // --- SORTING LOGIC ---
     if (data.bets && Array.isArray(data.bets)) {
         data.bets.sort((a, b) => {
             const timeA = (a.eventStart && !isNaN(a.eventStart)) ? Number(a.eventStart) : 9999999999;
             const timeB = (b.eventStart && !isNaN(b.eventStart)) ? Number(b.eventStart) : 9999999999;
             return timeA - timeB;
         });
+    } else {
+        console.log("⚠️ No 'bets' array found in data.");
     }
     
     const imgPath = await generateImage(data);
@@ -167,8 +186,10 @@ async function runUpdate() {
     if (saved.lastId) {
       try {
         const old = await channel.messages.fetch(saved.lastId);
-        await old.delete();
-      } catch (e) {}
+        if (old) await old.delete();
+      } catch (e) {
+        console.log("ℹ️ Could not delete old message (maybe already gone).");
+      }
     }
 
     const msg = await channel.send({
