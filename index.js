@@ -7,7 +7,7 @@ const { createCanvas, GlobalFonts } = require("@napi-rs/canvas");
 const fetch = require("node-fetch");
 const { Client, GatewayIntentBits, Events } = require("discord.js");
 
-console.log("--- BOT STARTING UP: VERSION 5.0 (FONT FIX) ---");
+console.log("--- BOT STARTING UP: VERSION 5.1 (SORTING & TIME) ---");
 
 // 1. CONFIG
 const DISCORD_TOKEN = (process.env.DISCORD_TOKEN || "").trim();
@@ -15,7 +15,6 @@ const CHANNEL_ID = (process.env.CHANNEL_ID || "").trim();
 const SHEET_URL = (process.env.SHEET_URL || "").trim();
 const MESSAGE_FILE = path.join(__dirname, "message.json");
 
-// Register Font from your uploaded file
 const FONT_FILENAME = "Roboto-VariableFont_wdth,wght.ttf";
 const FONT_PATH = path.join(__dirname, "fonts", FONT_FILENAME);
 
@@ -39,9 +38,17 @@ function getTornTime() {
   return new Date().toLocaleString("en-GB", { timeZone: "UTC", hour12: false }) + " TCT";
 }
 
+function formatTornTimestamp(ts) {
+  if (!ts || isNaN(ts) || ts === "No Time") return "—";
+  // Create date from Unix timestamp (seconds * 1000)
+  const date = new Date(ts * 1000);
+  const hh = date.getUTCHours().toString().padStart(2, '0');
+  const mm = date.getUTCMinutes().toString().padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
 function drawSafeText(ctx, text, x, y, w, h, align = "left", isBold = false) {
   ctx.fillStyle = "#000000";
-  // We use the alias "TornFont" we registered above
   ctx.font = isBold ? "bold 14px TornFont" : "14px TornFont";
   
   let tx = x + 8;
@@ -56,7 +63,8 @@ async function generateImage(data) {
   const players = data.players || [];
   const bets = data.bets || [];
   
-  const width = 800 + (players.length * 75);
+  // Expanded width for new column
+  const width = 850 + (players.length * 75);
   const height = 150 + (Math.max(bets.length, 1) * 35);
 
   const canvas = createCanvas(width, height);
@@ -75,10 +83,12 @@ async function generateImage(data) {
 
   let curY = 100;
   let curX = 20;
-  const colWidths = [350, 250, 80];
+  
+  // Adjusted Column Widths: Start Time, Match, Pick, Odds
+  const colWidths = [80, 300, 220, 80];
 
   // Headers
-  const headers = ["Match", "Pick", "Odds", ...players];
+  const headers = ["Start", "Match", "Pick", "Odds", ...players];
   headers.forEach((h, i) => {
     const w = colWidths[i] || 75;
     ctx.fillStyle = "#d9eaf7";
@@ -96,7 +106,11 @@ async function generateImage(data) {
   } else {
     bets.forEach((bet, rowIndex) => {
       curX = 20;
+      
+      const timeStr = formatTornTimestamp(bet.eventStart);
+
       const rowData = [
+        timeStr,
         bet.eventName || "—",
         bet.selectionName || "—",
         String(bet.odds || ""),
@@ -109,7 +123,9 @@ async function generateImage(data) {
         ctx.fillRect(curX, curY, w, 30);
         ctx.strokeStyle = "#000000";
         ctx.strokeRect(curX, curY, w, 30);
-        const align = i >= 2 ? "center" : "left";
+        
+        // Align Start Time, Odds, and Player status to center
+        const align = (i === 0 || i >= 3) ? "center" : "left";
         drawSafeText(ctx, String(val).slice(0, 50), curX, curY, w, 30, align);
         curX += w;
       });
@@ -130,6 +146,15 @@ async function runUpdate() {
     const res = await fetch(SHEET_URL);
     if (!res.ok) throw new Error(`Sheet HTTP ${res.status}`);
     const data = await res.json();
+    
+    // --- SORTING LOGIC: SOONEST FIRST ---
+    if (data.bets && Array.isArray(data.bets)) {
+        data.bets.sort((a, b) => {
+            const timeA = (a.eventStart && !isNaN(a.eventStart)) ? Number(a.eventStart) : 9999999999;
+            const timeB = (b.eventStart && !isNaN(b.eventStart)) ? Number(b.eventStart) : 9999999999;
+            return timeA - timeB;
+        });
+    }
     
     const imgPath = await generateImage(data);
     const channel = await client.channels.fetch(CHANNEL_ID);
@@ -161,6 +186,7 @@ async function runUpdate() {
 client.once(Events.ClientReady, () => {
   console.log(`✅ Online as ${client.user.tag}`);
   runUpdate();
+  // Set to 1 hour; adjust if needed
   setInterval(runUpdate, 60 * 60 * 1000); 
 });
 
