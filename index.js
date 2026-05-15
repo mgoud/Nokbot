@@ -20,58 +20,56 @@ const FONT_FILENAME = "Roboto-VariableFont_wdth,wght.ttf";
 const FONT_PATH = path.join(__dirname, "fonts", FONT_FILENAME);
 
 if (fs.existsSync(FONT_PATH)) {
-    GlobalFonts.registerFromPath(FONT_PATH, "TornFont");
-    console.log("✅ Font registered successfully: TornFont");
+    GlobalFonts.registerFromPath(FONT_PATH, "TornFont");
+    console.log("✅ Font registered successfully: TornFont");
 } else {
-    console.log("⚠️ FONT NOT FOUND! Checked path: " + FONT_PATH);
+    console.log("⚠️ FONT NOT FOUND! Checked path: " + FONT_PATH);
 }
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
 });
 
 // 2. HELPERS
 function getTornTime() {
-  return new Date().toLocaleString("en-GB", { timeZone: "UTC", hour12: false }) + " TCT";
+  return new Date().toLocaleString("en-GB", { timeZone: "UTC", hour12: false }) + " TCT";
 }
 
 function drawSafeText(ctx, text, x, y, w, h, align = "left", isBold = false) {
-  ctx.fillStyle = "#000000";
-  // We use the alias "TornFont" we registered above
-  ctx.font = isBold ? "bold 14px TornFont" : "14px TornFont";
-  
-  let tx = x + 8;
-  if (align === "center") {
-    const tw = ctx.measureText(text).width;
-    tx = x + (w - tw) / 2;
-  }
-  ctx.fillText(text, tx, y + (h / 2) + 5);
+  ctx.fillStyle = "#000000";
+  ctx.font = isBold ? "bold 14px TornFont" : "14px TornFont";
+  
+  let tx = x + 8;
+  if (align === "center") {
+    const tw = ctx.measureText(text).width;
+    tx = x + (w - tw) / 2;
+  }
+  ctx.fillText(text, tx, y + (h / 2) + 5);
 }
 
 async function generateImage(data) {
   const players = data.players || [];
   const bets = data.bets || [];
   
-  // 1. Added 100px for the new Start Time column
   const width = 900 + (players.length * 75); 
   const height = 150 + (Math.max(bets.length, 1) * 35);
 
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
-  // ... (Title/Background code remains same) ...
+  // Custom canvas styling block can sit here if needed
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
 
   let curY = 100;
   let curX = 20;
   
-  // 2. Updated Column Widths: Match, Pick, Start, Odds...
   const colWidths = [300, 200, 150, 80]; 
 
-  // 3. Updated Headers
   const headers = ["Match", "Pick", "Start (TCT)", "Odds", ...players];
   headers.forEach((h, i) => {
     const w = colWidths[i] || 75;
@@ -91,7 +89,6 @@ async function generateImage(data) {
     bets.forEach((bet, rowIndex) => {
       curX = 20;
 
-      // 4. Format the Start Time from Unix Timestamp to readable HH:mm
       let startTimeStr = "—";
       if (bet.eventStart && bet.eventStart > 0) {
         const d = new Date(bet.eventStart * 1000);
@@ -102,7 +99,7 @@ async function generateImage(data) {
       const rowData = [
         bet.eventName || "—",
         bet.selectionName || "—",
-        startTimeStr, // New Column Data
+        startTimeStr, 
         String(bet.odds || ""),
         ...players.map(p => (bet.players && bet.players[p]) ? "YES" : "-")
       ];
@@ -113,62 +110,67 @@ async function generateImage(data) {
         ctx.fillRect(curX, curY, w, 30);
         ctx.strokeStyle = "#000000";
         ctx.strokeRect(curX, curY, w, 30);
-        const align = i >= 2 ? "center" : "left"; // Center align Time, Odds, and Players
+        const align = i >= 2 ? "center" : "left"; 
         drawSafeText(ctx, String(val).slice(0, 50), curX, curY, w, 30, align);
         curX += w;
       });
       curY += 30;
     });
   }
-  // ... (Save buffer code remains same) ...
+  
+  // Temporary directory save for Discord attachment transfer
+  const imgPath = path.join(__dirname, "tracker.png");
+  fs.writeFileSync(imgPath, canvas.toBuffer("image/png"));
+  return imgPath;
 }
 
 // 3. MAIN LOGIC
 async function runUpdate() {
-  try {
-    console.log("🔄 Updating Tracker...");
-    const res = await fetch(SHEET_URL);
-    if (!res.ok) throw new Error(`Sheet HTTP ${res.status}`);
-    const data = await res.json();
-    
-    const imgPath = await generateImage(data);
-    const channel = await client.channels.fetch(CHANNEL_ID);
-    
-    let saved = {};
-    if (fs.existsSync(MESSAGE_FILE)) {
-      try { saved = JSON.parse(fs.readFileSync(MESSAGE_FILE, "utf8")); } catch (e) {}
-    }
+  try {
+    console.log("🔄 Updating Tracker...");
+    // UPDATED: Added target configuration settings to force handling endpoint redirects safely
+    const res = await fetch(SHEET_URL, { method: "GET", redirect: "follow" });
+    if (!res.ok) throw new Error(`Sheet HTTP ${res.status}`);
+    const data = await res.json();
+    
+    const imgPath = await generateImage(data);
+    const channel = await client.channels.fetch(CHANNEL_ID);
+    
+    let saved = {};
+    if (fs.existsSync(MESSAGE_FILE)) {
+      try { saved = JSON.parse(fs.readFileSync(MESSAGE_FILE, "utf8")); } catch (e) {}
+    }
 
-    if (saved.lastId) {
-      try {
-        const old = await channel.messages.fetch(saved.lastId);
-        await old.delete();
-      } catch (e) {}
-    }
+    if (saved.lastId) {
+      try {
+        const old = await channel.messages.fetch(saved.lastId);
+        await old.delete();
+      } catch (e) {}
+    }
 
-    const msg = await channel.send({
-      content: `**Torn Bookie Tracker** | Updated: ${getTornTime()}`,
-      files: [imgPath]
-    });
+    const msg = await channel.send({
+      content: `**Torn Bookie Tracker** | Updated: ${getTornTime()}`,
+      files: [imgPath]
+    });
 
-    fs.writeFileSync(MESSAGE_FILE, JSON.stringify({ lastId: msg.id }));
-    console.log("✅ Success!");
-  } catch (err) {
-    console.error("❌ Tracker Error:", err.message);
-  }
+    fs.writeFileSync(MESSAGE_FILE, JSON.stringify({ lastId: msg.id }));
+    console.log("✅ Success!");
+  } catch (err) {
+    console.error("❌ Tracker Error:", err.message);
+  }
 }
 
 client.once(Events.ClientReady, () => {
-  console.log(`✅ Online as ${client.user.tag}`);
-  runUpdate();
-  setInterval(runUpdate, 60 * 60 * 1000); 
+  console.log(`✅ Online as ${client.user.tag}`);
+  runUpdate();
+  setInterval(runUpdate, 60 * 60 * 1000); 
 });
 
 client.on(Events.MessageCreate, m => {
-  if (m.content === "!update") {
-    m.reply("Manual update triggered...");
-    runUpdate();
-  }
+  if (m.content === "!update") {
+    m.reply("Manual update triggered...");
+    runUpdate();
+  }
 });
 
 client.login(DISCORD_TOKEN).catch(e => console.error("❌ Login Failed:", e.message));
