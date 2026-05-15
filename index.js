@@ -53,74 +53,74 @@ function drawSafeText(ctx, text, x, y, w, h, align = "left", isBold = false) {
 }
 
 async function generateImage(data) {
-  const players = data.players || [];
-  const bets = data.bets || [];
-  
-  const width = 800 + (players.length * 75);
-  const height = 150 + (Math.max(bets.length, 1) * 35);
+  const players = data.players || [];
+  const bets = data.bets || [];
+  
+  // 1. Added 100px for the new Start Time column
+  const width = 900 + (players.length * 75); 
+  const height = 150 + (Math.max(bets.length, 1) * 35);
 
-  const canvas = createCanvas(width, height);
-  const ctx = canvas.getContext("2d");
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext("2d");
 
-  // Background
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, width, height);
+  // ... (Title/Background code remains same) ...
 
-  // Title
-  ctx.fillStyle = "#000000";
-  ctx.font = "bold 20px TornFont";
-  ctx.fillText("Torn Bookie Tracker", 20, 40);
-  ctx.font = "12px TornFont";
-  ctx.fillText(`Last Update: ${getTornTime()}`, 20, 65);
+  let curY = 100;
+  let curX = 20;
+  
+  // 2. Updated Column Widths: Match, Pick, Start, Odds...
+  const colWidths = [300, 200, 150, 80]; 
 
-  let curY = 100;
-  let curX = 20;
-  const colWidths = [350, 250, 80];
+  // 3. Updated Headers
+  const headers = ["Match", "Pick", "Start (TCT)", "Odds", ...players];
+  headers.forEach((h, i) => {
+    const w = colWidths[i] || 75;
+    ctx.fillStyle = "#d9eaf7";
+    ctx.fillRect(curX, curY, w, 30);
+    ctx.strokeStyle = "#000000";
+    ctx.strokeRect(curX, curY, w, 30);
+    drawSafeText(ctx, h, curX, curY, w, 30, "center", true);
+    curX += w;
+  });
 
-  // Headers
-  const headers = ["Match", "Pick", "Odds", ...players];
-  headers.forEach((h, i) => {
-    const w = colWidths[i] || 75;
-    ctx.fillStyle = "#d9eaf7";
-    ctx.fillRect(curX, curY, w, 30);
-    ctx.strokeStyle = "#000000";
-    ctx.strokeRect(curX, curY, w, 30);
-    drawSafeText(ctx, h, curX, curY, w, 30, "center", true);
-    curX += w;
-  });
+  // Rows
+  curY += 30;
+  if (bets.length === 0) {
+    drawSafeText(ctx, "No active bets found in sheet.", 20, curY, width - 40, 30, "left");
+  } else {
+    bets.forEach((bet, rowIndex) => {
+      curX = 20;
 
-  // Rows
-  curY += 30;
-  if (bets.length === 0) {
-    drawSafeText(ctx, "No active bets found in sheet.", 20, curY, width - 40, 30, "left");
-  } else {
-    bets.forEach((bet, rowIndex) => {
-      curX = 20;
-      const rowData = [
-        bet.eventName || "—",
-        bet.selectionName || "—",
-        String(bet.odds || ""),
-        ...players.map(p => (bet.players && bet.players[p]) ? "YES" : "-")
-      ];
+      // 4. Format the Start Time from Unix Timestamp to readable HH:mm
+      let startTimeStr = "—";
+      if (bet.eventStart && bet.eventStart > 0) {
+        const d = new Date(bet.eventStart * 1000);
+        startTimeStr = d.getUTCHours().toString().padStart(2, '0') + ":" + 
+                       d.getUTCMinutes().toString().padStart(2, '0');
+      }
 
-      rowData.forEach((val, i) => {
-        const w = colWidths[i] || 75;
-        ctx.fillStyle = rowIndex % 2 === 0 ? "#ffffff" : "#f9f9f9";
-        ctx.fillRect(curX, curY, w, 30);
-        ctx.strokeStyle = "#000000";
-        ctx.strokeRect(curX, curY, w, 30);
-        const align = i >= 2 ? "center" : "left";
-        drawSafeText(ctx, String(val).slice(0, 50), curX, curY, w, 30, align);
-        curX += w;
-      });
-      curY += 30;
-    });
-  }
+      const rowData = [
+        bet.eventName || "—",
+        bet.selectionName || "—",
+        startTimeStr, // New Column Data
+        String(bet.odds || ""),
+        ...players.map(p => (bet.players && bet.players[p]) ? "YES" : "-")
+      ];
 
-  const outPath = path.join(__dirname, "tracker.png");
-  const buffer = canvas.toBuffer('image/png');
-  fs.writeFileSync(outPath, buffer);
-  return outPath;
+      rowData.forEach((val, i) => {
+        const w = colWidths[i] || 75;
+        ctx.fillStyle = rowIndex % 2 === 0 ? "#ffffff" : "#f9f9f9";
+        ctx.fillRect(curX, curY, w, 30);
+        ctx.strokeStyle = "#000000";
+        ctx.strokeRect(curX, curY, w, 30);
+        const align = i >= 2 ? "center" : "left"; // Center align Time, Odds, and Players
+        drawSafeText(ctx, String(val).slice(0, 50), curX, curY, w, 30, align);
+        curX += w;
+      });
+      curY += 30;
+    });
+  }
+  // ... (Save buffer code remains same) ...
 }
 
 // 3. MAIN LOGIC
