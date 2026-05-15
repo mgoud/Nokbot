@@ -128,10 +128,24 @@ async function generateImage(data) {
 async function runUpdate() {
   try {
     console.log("🔄 Updating Tracker...");
-    // UPDATED: Added target configuration settings to force handling endpoint redirects safely
+    console.log(`📡 [DEBUG] Attempting to fetch URL: "${SHEET_URL}"`);
+    
     const res = await fetch(SHEET_URL, { method: "GET", redirect: "follow" });
-    if (!res.ok) throw new Error(`Sheet HTTP ${res.status}`);
+    
+    // If it's not a 200 OK, print the underlying details before throwing
+    if (!res.ok) {
+      console.error(`❌ [DEBUG] HTTP Error Status: ${res.status} (${res.statusText})`);
+      try {
+        const errorText = await res.text();
+        console.error(`📄 [DEBUG] Response body from Google:\n${errorText.slice(0, 500)}`);
+      } catch (e) {
+        console.error(`⚠️ [DEBUG] Could not read response body: ${e.message}`);
+      }
+      throw new Error(`Sheet HTTP ${res.status}`);
+    }
+    
     const data = await res.json();
+    console.log("📊 [DEBUG] Data successfully fetched! Sample:", JSON.stringify(data).slice(0, 150));
     
     const imgPath = await generateImage(data);
     const channel = await client.channels.fetch(CHANNEL_ID);
