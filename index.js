@@ -150,12 +150,22 @@ async function generateSummaryImage(summaryData) {
 }
 
 // Active Bets Image Generator
+// Active Bets Image Generator (FIXED CHRONO-SORT & COUNTDOWNS)
 async function generateActiveBetsImage(data) {
   const players = data.players || [];
-  const bets = data.bets || [];
+  let bets = data.bets || [];
   
-  const colWidths = [300, 200, 180, 80]; 
-  const width = 930 + (players.length * 75); 
+  // 1. STRICTOR CHRONOLOGICAL SORTING
+  // Sort by raw eventStart timestamp ascending. If missing, drop to the bottom.
+  bets.sort((a, b) => {
+    const timeA = Number(a.eventStart) || 9999999999;
+    const timeB = Number(b.eventStart) || 9999999999;
+    return timeA - timeB;
+  });
+
+  // Expanded the Start column width from 180 to 240 to perfectly accommodate the countdown strings
+  const colWidths = [300, 200, 240, 80]; 
+  const width = 820 + (players.length * 75); // Recalculated tracking base footprint
   const height = 100 + (Math.max(bets.length, 1) * 35);
 
   const canvas = createCanvas(width, height);
@@ -170,9 +180,9 @@ async function generateActiveBetsImage(data) {
   const headers = ["Match", "Pick", "Start (DD/MM TCT)", "Odds", ...players];
   headers.forEach((h, i) => {
     const w = colWidths[i] || 75;
-    ctx.fillStyle = "#d9eaf7"; // Standard blue for live tracker
-    ctx.fillRect(curX, curY, w, 30);
+    ctx.fillStyle = "#d9eaf7"; 
     ctx.strokeStyle = "#000000";
+    ctx.fillRect(curX, curY, w, 30);
     ctx.strokeRect(curX, curY, w, 30);
     drawSafeText(ctx, h, curX, curY, w, 30, "center", true);
     curX += w;
@@ -182,23 +192,52 @@ async function generateActiveBetsImage(data) {
   if (bets.length === 0) {
     drawSafeText(ctx, "No active bets found in sheet.", 20, curY, width - 40, 30, "left");
   } else {
+    // Dynamic countdown anchors based on standard TCT (UTC) baseline right now
+    const nowMs = Date.now();
+
     bets.forEach((bet, rowIndex) => {
       curX = 20;
 
-      let startTimeStr = "—";
+      let timeDisplayStr = "—";
       if (bet.eventStart && bet.eventStart > 0) {
-        const d = new Date(bet.eventStart * 1000);
+        const startMs = bet.eventStart * 1000;
+        const d = new Date(startMs);
+        
+        // Base Date Building Blocks
         const day = d.getUTCDate().toString().padStart(2, '0');
         const month = (d.getUTCMonth() + 1).toString().padStart(2, '0');
         const hours = d.getUTCHours().toString().padStart(2, '0');
         const minutes = d.getUTCMinutes().toString().padStart(2, '0');
-        startTimeStr = `${day}/${month} ${hours}:${minutes}`;
+        const baseDate = `${day}/${month} ${hours}:${minutes}`;
+
+        // 2. DYNAMIC COUNTDOWN CALCULATOR
+        const diffMs = startMs - nowMs;
+        let countdownStr = "";
+
+        if (diffMs <= 0) {
+          countdownStr = "(LIVE/STARTED)";
+        } else {
+          const diffHours = diffMs / (1000 * 60 * 60);
+          
+          if (diffHours >= 24) {
+            const diffDays = Math.floor(diffHours / 24);
+            countdownStr = `(${diffDays}d+ away)`;
+          } else if (diffHours >= 1) {
+            countdownStr = `(in ${Math.floor(diffHours)}h)`;
+          } else {
+            const diffMins = Math.floor(diffMs / (1000 * 60));
+            countdownStr = `(in ${diffMins}m)`;
+          }
+        }
+
+        // Combine them together nicely within the same cell string
+        timeDisplayStr = `${baseDate} ${countdownStr}`;
       }
 
       const rowData = [
         bet.eventName || "—",
         bet.selectionName || "—",
-        startTimeStr, 
+        timeDisplayStr, 
         String(bet.odds || ""),
         ...players.map(p => (bet.players && bet.players[p]) ? "YES" : "-")
       ];
@@ -209,8 +248,12 @@ async function generateActiveBetsImage(data) {
         ctx.fillRect(curX, curY, w, 30);
         ctx.strokeStyle = "#000000";
         ctx.strokeRect(curX, curY, w, 30);
+        
         const align = i >= 2 ? "center" : "left"; 
-        drawSafeText(ctx, String(val).slice(0, 50), curX, curY, w, 30, align);
+        
+        // Use a clean font adjustment for the tracking matrix
+        ctx.font = "13px TornFont";
+        drawSafeText(ctx, String(val).slice(0, 60), curX, curY, w, 30, align);
         curX += w;
       });
       curY += 30;
