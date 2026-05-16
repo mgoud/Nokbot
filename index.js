@@ -55,23 +55,23 @@ async function generateImage(data) {
   const players = data.players || [];
   const bets = data.bets || [];
   
-  const width = 900 + (players.length * 75); 
+  // Adjusted column spacing dynamically to handle the wider date column
+  const width = 930 + (players.length * 75); 
   const height = 150 + (Math.max(bets.length, 1) * 35);
 
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
-  // Custom canvas styling block can sit here if needed
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
 
   let curY = 100;
   let curX = 20;
   
-  // INCREASED Start column width from 150 to 180 to fit dates comfortably
+  // 1. Updated Column Widths Array (Increased date slot to 180)
   const colWidths = [300, 200, 180, 80]; 
 
-  // Updated Header label text
+  // 2. Clear Header Labels
   const headers = ["Match", "Pick", "Start (DD/MM TCT)", "Odds", ...players];
   headers.forEach((h, i) => {
     const w = colWidths[i] || 75;
@@ -91,8 +91,8 @@ async function generateImage(data) {
     bets.forEach((bet, rowIndex) => {
       curX = 20;
 
-      // FIND THIS INSIDE generateImage() in index.js (Around lines 75-81)
-let startTimeStr = "—";
+      // 3. Clean Date Formatting Processor
+      let startTimeStr = "—";
       if (bet.eventStart && bet.eventStart > 0) {
         const d = new Date(bet.eventStart * 1000);
         
@@ -101,10 +101,8 @@ let startTimeStr = "—";
         const hours = d.getUTCHours().toString().padStart(2, '0');
         const minutes = d.getUTCMinutes().toString().padStart(2, '0');
         
-        // Combines to format like: "16/05 15:15"
         startTimeStr = `${day}/${month} ${hours}:${minutes}`;
       }
-}
 
       const rowData = [
         bet.eventName || "—",
@@ -127,6 +125,11 @@ let startTimeStr = "—";
       curY += 30;
     });
   }
+  
+  const imgPath = path.join(__dirname, "tracker.png");
+  fs.writeFileSync(imgPath, canvas.toBuffer("image/png"));
+  return imgPath;
+}
   
   // Temporary directory save for Discord attachment transfer
   const imgPath = path.join(__dirname, "tracker.png");
