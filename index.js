@@ -164,7 +164,7 @@ async function generateActiveBetsImage(data) {
   });
 
   // Expanded the Start column width from 180 to 240 to perfectly accommodate the countdown strings
-  const colWidths = [300, 200, 240, 80]; 
+  const colWidths = [280, 180, 200, 80]; 
   const width = 820 + (players.length * 75); // Recalculated tracking base footprint
   const height = 100 + (Math.max(bets.length, 1) * 35);
 
