@@ -64,9 +64,10 @@ function drawSafeText(ctx, text, x, y, w, h, align = "left", isBold = false) {
 }
 
 // Summary Image Generator
+// Summary Image Generator (FIXED COLUMN WIDTHS)
 async function generateSummaryImage(summaryData) {
-  // Columns: Player, Month, Bets, W/L, Today, W1, W2, W3, W4, W5, Total Month Profit
-  const colWidths = [120, 80, 60, 75, 120, 110, 110, 110, 110, 110, 140];
+  // Increased Player to 150, Month to 90, and tweaked week widths for a cleaner footprint
+  const colWidths = [150, 90, 60, 75, 130, 120, 120, 120, 120, 120, 150];
   const width = colWidths.reduce((a, b) => a + b, 0) + 40;
   const height = 100 + (Math.max(summaryData.length, 1) * 35);
 
@@ -83,7 +84,7 @@ async function generateSummaryImage(summaryData) {
   
   headers.forEach((h, i) => {
     const w = colWidths[i];
-    ctx.fillStyle = "#e2efda"; // Pale green for summary differentiation
+    ctx.fillStyle = "#e2efda"; 
     ctx.fillRect(curX, curY, w, 30);
     ctx.strokeStyle = "#000000";
     ctx.strokeRect(curX, curY, w, 30);
@@ -99,9 +100,19 @@ async function generateSummaryImage(summaryData) {
       curX = 20;
       const wlString = `${row.wins || 0}/${row.losses || 0}`;
       
+      // FIX: Clean up Month data string to cut out any long timestamp extensions (takes just YYYY-MM)
+      let cleanMonth = String(row.month || "—");
+      if (cleanMonth.includes("T")) {
+        cleanMonth = cleanMonth.split("T")[0];
+      }
+      // If it leaks as a longer format without a T (e.g. YYYY-MM-DD), slice it up to the month mark
+      if (cleanMonth.length > 7) {
+        cleanMonth = cleanMonth.slice(0, 7);
+      }
+
       const rowData = [
         row.player || "—",
-        row.month || "—",
+        cleanMonth,
         String(row.bets || 0),
         wlString,
         formatCurrency(row.profitToday),
@@ -120,11 +131,12 @@ async function generateSummaryImage(summaryData) {
         ctx.strokeStyle = "#000000";
         ctx.strokeRect(curX, curY, w, 30);
         
-        // Align formatting blocks based on column values
         let align = "left";
         if (i === 1 || i === 2 || i === 3) align = "center";
         if (i >= 4) align = "right";
 
+        // Tweak: Dropping size slightly down to 13px directly inside this loop for ultra-safe padding
+        ctx.font = "13px TornFont";
         drawSafeText(ctx, val, curX, curY, w, 30, align);
         curX += w;
       });
