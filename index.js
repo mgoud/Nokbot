@@ -130,12 +130,6 @@ async function generateImage(data) {
   fs.writeFileSync(imgPath, canvas.toBuffer("image/png"));
   return imgPath;
 }
-  
-  // Temporary directory save for Discord attachment transfer
-  const imgPath = path.join(__dirname, "tracker.png");
-  fs.writeFileSync(imgPath, canvas.toBuffer("image/png"));
-  return imgPath;
-}
 
 // 3. MAIN LOGIC
 async function runUpdate() {
