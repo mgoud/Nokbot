@@ -68,9 +68,11 @@ async function generateImage(data) {
   let curY = 100;
   let curX = 20;
   
-  const colWidths = [300, 200, 150, 80]; 
+  // INCREASED Start column width from 150 to 180 to fit dates comfortably
+  const colWidths = [300, 200, 180, 80]; 
 
-  const headers = ["Match", "Pick", "Start (TCT)", "Odds", ...players];
+  // Updated Header label text
+  const headers = ["Match", "Pick", "Start (DD/MM TCT)", "Odds", ...players];
   headers.forEach((h, i) => {
     const w = colWidths[i] || 75;
     ctx.fillStyle = "#d9eaf7";
@@ -91,16 +93,17 @@ async function generateImage(data) {
 
       // FIND THIS INSIDE generateImage() in index.js (Around lines 75-81)
 let startTimeStr = "—";
-if (bet.eventStart) {
-  // Try parsing it assuming it might be a text string or a timestamp
-  const timestamp = Number(bet.eventStart);
-  const d = !isNaN(timestamp) && timestamp > 0 ? new Date(timestamp * 1000) : new Date(bet.eventStart);
-  
-  // Make sure the date is actually valid before drawing it
-  if (!isNaN(d.getTime())) {
-    startTimeStr = d.getUTCHours().toString().padStart(2, '0') + ":" + 
-                   d.getUTCMinutes().toString().padStart(2, '0');
-  }
+      if (bet.eventStart && bet.eventStart > 0) {
+        const d = new Date(bet.eventStart * 1000);
+        
+        const day = d.getUTCDate().toString().padStart(2, '0');
+        const month = (d.getUTCMonth() + 1).toString().padStart(2, '0');
+        const hours = d.getUTCHours().toString().padStart(2, '0');
+        const minutes = d.getUTCMinutes().toString().padStart(2, '0');
+        
+        // Combines to format like: "16/05 15:15"
+        startTimeStr = `${day}/${month} ${hours}:${minutes}`;
+      }
 }
 
       const rowData = [
