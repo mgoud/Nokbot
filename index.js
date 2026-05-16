@@ -89,12 +89,19 @@ async function generateImage(data) {
     bets.forEach((bet, rowIndex) => {
       curX = 20;
 
-      let startTimeStr = "—";
-      if (bet.eventStart && bet.eventStart > 0) {
-        const d = new Date(bet.eventStart * 1000);
-        startTimeStr = d.getUTCHours().toString().padStart(2, '0') + ":" + 
-                       d.getUTCMinutes().toString().padStart(2, '0');
-      }
+      // FIND THIS INSIDE generateImage() in index.js (Around lines 75-81)
+let startTimeStr = "—";
+if (bet.eventStart) {
+  // Try parsing it assuming it might be a text string or a timestamp
+  const timestamp = Number(bet.eventStart);
+  const d = !isNaN(timestamp) && timestamp > 0 ? new Date(timestamp * 1000) : new Date(bet.eventStart);
+  
+  // Make sure the date is actually valid before drawing it
+  if (!isNaN(d.getTime())) {
+    startTimeStr = d.getUTCHours().toString().padStart(2, '0') + ":" + 
+                   d.getUTCMinutes().toString().padStart(2, '0');
+  }
+}
 
       const rowData = [
         bet.eventName || "—",
