@@ -7,17 +7,17 @@ const { createCanvas, GlobalFonts } = require("@napi-rs/canvas");
 const fetch = require("node-fetch");
 const { Client, GatewayIntentBits, Events } = require("discord.js");
 
-console.log("--- BOT STARTING UP: VERSION 6.1 (MULTI-CHANNEL DASHBOARD) ---");
+console.log("--- BOT STARTING UP: VERSION 7.0 (PUBLIC + PLAYER CHANNEL DASHBOARDS) ---");
 
 // 1. CONFIG
 const DISCORD_TOKEN = (process.env.DISCORD_TOKEN || "").trim();
 
-// Keep this working for your current setup
 const CHANNEL_ID = (process.env.CHANNEL_ID || "").trim();
-
-// Optional: add more channel IDs here as comma-separated environment variable
-// Example: CHANNEL_IDS=111111111111111111,222222222222222222
 const CHANNEL_IDS_RAW = (process.env.CHANNEL_IDS || "").trim();
+
+// Example:
+// PLAYER_CHANNELS_JSON={"PlayerA":"123456789012345678","PlayerB":"234567890123456789"}
+const PLAYER_CHANNELS_JSON = (process.env.PLAYER_CHANNELS_JSON || "").trim();
 
 const SHEET_URL = (process.env.SHEET_URL || "").trim();
 const MESSAGE_FILE = path.join(__dirname, "message.json");
@@ -41,13 +41,10 @@ const client = new Client({
 });
 
 // 2. HELPERS
-
 function getDashboardChannelIds() {
   const ids = [];
 
-  if (CHANNEL_ID) {
-    ids.push(CHANNEL_ID);
-  }
+  if (CHANNEL_ID) ids.push(CHANNEL_ID);
 
   if (CHANNEL_IDS_RAW) {
     CHANNEL_IDS_RAW
@@ -57,8 +54,33 @@ function getDashboardChannelIds() {
       .forEach(id => ids.push(id));
   }
 
-  // Remove duplicates
   return [...new Set(ids)];
+}
+
+function getPlayerChannelMap() {
+  if (!PLAYER_CHANNELS_JSON) return {};
+
+  try {
+    const parsed = JSON.parse(PLAYER_CHANNELS_JSON);
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      console.log("⚠️ PLAYER_CHANNELS_JSON is not a valid object.");
+      return {};
+    }
+
+    const cleaned = {};
+
+    for (const [player, channelId] of Object.entries(parsed)) {
+      if (player && channelId) {
+        cleaned[String(player).trim()] = String(channelId).trim();
+      }
+    }
+
+    return cleaned;
+  } catch (e) {
+    console.log("⚠️ Failed to parse PLAYER_CHANNELS_JSON:", e.message);
+    return {};
+  }
 }
 
 function loadMessageCache() {
@@ -72,13 +94,9 @@ function loadMessageCache() {
     }
   }
 
-  // New format
-  if (!saved.channels) {
-    saved.channels = {};
-  }
+  if (!saved.channels) saved.channels = {};
 
-  // Backwards compatibility with your old message.json format:
-  // { summaryMsgId: "...", betsMsgId: "..." }
+  // Backwards compatibility with old message.json
   if ((saved.summaryMsgId || saved.betsMsgId) && CHANNEL_ID) {
     saved.channels[CHANNEL_ID] = {
       summaryMsgId: saved.summaryMsgId,
@@ -112,6 +130,50 @@ function formatCurrency(val) {
   return `${prefix}${absoluteValue}`;
 }
 
+function normalizeName(name) {
+  return String(name || "").trim().toLowerCase();
+}
+
+function makeSafeFileSuffix(value) {
+  return String(value || "file").replace(/[^a-z0-9_-]/gi, "_");
+}
+
+function findMatchingPlayerKey(playersObj, playerName) {
+  if (!playersObj || typeof playersObj !== "object") return null;
+
+  const target = normalizeName(playerName);
+
+  return Object.keys(playersObj).find(key =>
+    normalizeName(key) === target && playersObj[key]
+  ) || null;
+}
+
+function filterSummaryForPlayer(summaryData, playerName) {
+  const target = normalizeName(playerName);
+
+  return (summaryData || []).filter(row =>
+    normalizeName(row.player) === target
+  );
+}
+
+function filterActiveBetsForPlayer(data, playerName) {
+  const allBets = data.bets || [];
+
+  const filteredBets = allBets
+    .filter(bet => findMatchingPlayerKey(bet.players, playerName))
+    .map(bet => ({
+      ...bet,
+      players: {
+        [playerName]: true
+      }
+    }));
+
+  return {
+    players: [playerName],
+    bets: filteredBets
+  };
+}
+
 function drawSafeText(ctx, text, x, y, w, h, align = "left", isBold = false) {
   ctx.fillStyle = "#000000";
   ctx.font = isBold ? "bold 14px TornFont" : "14px TornFont";
@@ -129,8 +191,8 @@ function drawSafeText(ctx, text, x, y, w, h, align = "left", isBold = false) {
   ctx.fillText(text, tx, y + (h / 2) + 5);
 }
 
-// Summary Image Generator
-async function generateSummaryImage(summaryData) {
+// 3. IMAGE GENERATORS
+async function generateSummaryImage(summaryData, fileSuffix = "global") {
   const colWidths = [150, 90, 60, 75, 130, 120, 120, 120, 120, 120, 150];
   const width = colWidths.reduce((a, b) => a + b, 0) + 40;
   const height = 100 + (Math.max(summaryData.length, 1) * 35);
@@ -160,10 +222,13 @@ async function generateSummaryImage(summaryData) {
 
   headers.forEach((h, i) => {
     const w = colWidths[i];
+
     ctx.fillStyle = "#e2efda";
     ctx.fillRect(curX, curY, w, 30);
+
     ctx.strokeStyle = "#000000";
     ctx.strokeRect(curX, curY, w, 30);
+
     drawSafeText(ctx, h, curX, curY, w, 30, "center", true);
     curX += w;
   });
@@ -175,6 +240,7 @@ async function generateSummaryImage(summaryData) {
   } else {
     summaryData.forEach((row, rowIndex) => {
       curX = 20;
+
       const wlString = `${row.wins || 0}/${row.losses || 0}`;
 
       let cleanMonth = String(row.month || "—");
@@ -215,7 +281,7 @@ async function generateSummaryImage(summaryData) {
         if (i >= 4) align = "right";
 
         ctx.font = "13px TornFont";
-        drawSafeText(ctx, val, curX, curY, w, 30, align);
+        drawSafeText(ctx, String(val), curX, curY, w, 30, align);
 
         curX += w;
       });
@@ -224,13 +290,14 @@ async function generateSummaryImage(summaryData) {
     });
   }
 
-  const imgPath = path.join(__dirname, "summary.png");
+  const safeSuffix = makeSafeFileSuffix(fileSuffix);
+  const imgPath = path.join(__dirname, `summary_${safeSuffix}.png`);
+
   fs.writeFileSync(imgPath, canvas.toBuffer("image/png"));
   return imgPath;
 }
 
-// Active Bets Image Generator
-async function generateActiveBetsImage(data) {
+async function generateActiveBetsImage(data, fileSuffix = "global") {
   const players = data.players || [];
   let bets = data.bets || [];
 
@@ -343,20 +410,93 @@ async function generateActiveBetsImage(data) {
     });
   }
 
-  const imgPath = path.join(__dirname, "tracker.png");
+  const safeSuffix = makeSafeFileSuffix(fileSuffix);
+  const imgPath = path.join(__dirname, `tracker_${safeSuffix}.png`);
+
   fs.writeFileSync(imgPath, canvas.toBuffer("image/png"));
   return imgPath;
 }
 
-// 3. MAIN LOGIC
+// 4. POSTING
+async function postDashboardToChannel(channelId, summaryImg, activeImg, saved, titlePrefix = "") {
+  console.log(`📨 Posting dashboards to channel ${channelId}...`);
+
+  let channel;
+
+  try {
+    channel = await client.channels.fetch(channelId);
+  } catch (e) {
+    console.error(`❌ Could not fetch channel ${channelId}:`, e.message);
+    return;
+  }
+
+  if (!channel) {
+    console.error(`❌ Channel not found: ${channelId}`);
+    return;
+  }
+
+  if (!saved.channels[channelId]) {
+    saved.channels[channelId] = {};
+  }
+
+  const channelSaved = saved.channels[channelId];
+
+  if (channelSaved.summaryMsgId) {
+    try {
+      const oldSummary = await channel.messages.fetch(channelSaved.summaryMsgId);
+      await oldSummary.delete();
+    } catch (e) {
+      console.log(`⚠️ Could not delete old summary in ${channelId}: ${e.message}`);
+    }
+  }
+
+  if (channelSaved.betsMsgId) {
+    try {
+      const oldBets = await channel.messages.fetch(channelSaved.betsMsgId);
+      await oldBets.delete();
+    } catch (e) {
+      console.log(`⚠️ Could not delete old bets dashboard in ${channelId}: ${e.message}`);
+    }
+  }
+
+  const summaryTitle = titlePrefix
+    ? `📊 **${titlePrefix} Monthly Performance Summary**`
+    : "📊 **Torn Bookie Monthly Performance Summary**";
+
+  const betsTitle = titlePrefix
+    ? `⚔️ **${titlePrefix} Live Tracking Dashboard** | Updated: ${getTornTime()}`
+    : `⚔️ **Live Tracking Dashboard** | Updated: ${getTornTime()}`;
+
+  const summaryMsg = await channel.send({
+    content: summaryTitle,
+    files: [summaryImg]
+  });
+
+  const betsMsg = await channel.send({
+    content: betsTitle,
+    files: [activeImg]
+  });
+
+  saved.channels[channelId] = {
+    summaryMsgId: summaryMsg.id,
+    betsMsgId: betsMsg.id
+  };
+
+  saveMessageCache(saved);
+
+  console.log(`✅ Dashboard posted to ${channelId}`);
+}
+
+// 5. MAIN LOGIC
 async function runUpdate() {
   try {
     console.log("🔄 Updating Summary and Active Trackers...");
 
-    const channelIds = getDashboardChannelIds();
+    const publicChannelIds = getDashboardChannelIds();
+    const playerChannelMap = getPlayerChannelMap();
 
-    if (channelIds.length === 0) {
-      throw new Error("No channel IDs configured. Set CHANNEL_ID or CHANNEL_IDS.");
+    if (publicChannelIds.length === 0 && Object.keys(playerChannelMap).length === 0) {
+      throw new Error("No dashboard channels configured. Set CHANNEL_ID / CHANNEL_IDS and/or PLAYER_CHANNELS_JSON.");
     }
 
     const res = await fetch(SHEET_URL, {
@@ -369,71 +509,29 @@ async function runUpdate() {
     }
 
     const data = await res.json();
-
-    const summaryImg = await generateSummaryImage(data.summary || []);
-    const activeImg = await generateActiveBetsImage(data);
-
     const saved = loadMessageCache();
 
-    for (const channelId of channelIds) {
-      console.log(`📨 Posting dashboards to channel ${channelId}...`);
+    // Public/full dashboards
+    if (publicChannelIds.length > 0) {
+      const summaryImg = await generateSummaryImage(data.summary || [], "global");
+      const activeImg = await generateActiveBetsImage(data, "global");
 
-      let channel;
-
-      try {
-        channel = await client.channels.fetch(channelId);
-      } catch (e) {
-        console.error(`❌ Could not fetch channel ${channelId}:`, e.message);
-        continue;
+      for (const channelId of publicChannelIds) {
+        await postDashboardToChannel(channelId, summaryImg, activeImg, saved, "");
       }
+    }
 
-      if (!channel) {
-        console.error(`❌ Channel not found: ${channelId}`);
-        continue;
-      }
+    // Player-specific/private dashboards
+    for (const [playerName, channelId] of Object.entries(playerChannelMap)) {
+      const playerSummary = filterSummaryForPlayer(data.summary || [], playerName);
+      const playerActiveData = filterActiveBetsForPlayer(data, playerName);
 
-      if (!saved.channels[channelId]) {
-        saved.channels[channelId] = {};
-      }
+      const suffix = `player_${playerName}`;
 
-      const channelSaved = saved.channels[channelId];
+      const playerSummaryImg = await generateSummaryImage(playerSummary, suffix);
+      const playerActiveImg = await generateActiveBetsImage(playerActiveData, suffix);
 
-      if (channelSaved.summaryMsgId) {
-        try {
-          const oldSummary = await channel.messages.fetch(channelSaved.summaryMsgId);
-          await oldSummary.delete();
-        } catch (e) {
-          console.log(`⚠️ Could not delete old summary in ${channelId}: ${e.message}`);
-        }
-      }
-
-      if (channelSaved.betsMsgId) {
-        try {
-          const oldBets = await channel.messages.fetch(channelSaved.betsMsgId);
-          await oldBets.delete();
-        } catch (e) {
-          console.log(`⚠️ Could not delete old bets dashboard in ${channelId}: ${e.message}`);
-        }
-      }
-
-      const summaryMsg = await channel.send({
-        content: "📊 **Torn Bookie Monthly Performance Summary**",
-        files: [summaryImg]
-      });
-
-      const betsMsg = await channel.send({
-        content: `⚔️ **Live Tracking Dashboard** | Updated: ${getTornTime()}`,
-        files: [activeImg]
-      });
-
-      saved.channels[channelId] = {
-        summaryMsgId: summaryMsg.id,
-        betsMsgId: betsMsg.id
-      };
-
-      saveMessageCache(saved);
-
-      console.log(`✅ Dashboard posted to ${channelId}`);
+      await postDashboardToChannel(channelId, playerSummaryImg, playerActiveImg, saved, playerName);
     }
 
     console.log("✅ Dashboard Update Complete!");
@@ -442,6 +540,7 @@ async function runUpdate() {
   }
 }
 
+// 6. DISCORD EVENTS
 client.once(Events.ClientReady, () => {
   console.log(`✅ Online as ${client.user.tag}`);
 
