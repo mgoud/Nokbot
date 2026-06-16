@@ -6,6 +6,7 @@ const path = require("path");
 const { createCanvas, GlobalFonts } = require("@napi-rs/canvas");
 const fetch = require("node-fetch");
 const { Client, GatewayIntentBits, Events } = require("discord.js");
+const OWNER_PLAYER_NAME = (process.env.OWNER_PLAYER_NAME || "Nokian").trim();
 
 console.log("--- BOT STARTING UP: VERSION 7.0 (PUBLIC + PLAYER CHANNEL DASHBOARDS) ---");
 
@@ -148,28 +149,70 @@ function findMatchingPlayerKey(playersObj, playerName) {
   ) || null;
 }
 
-function filterSummaryForPlayer(summaryData, playerName) {
-  const target = normalizeName(playerName);
+function getPrivateReportPlayers(playerName) {
+  const players = [OWNER_PLAYER_NAME, playerName]
+    .map(p => String(p || "").trim())
+    .filter(Boolean);
 
-  return (summaryData || []).filter(row =>
-    normalizeName(row.player) === target
+  return [...new Set(players)];
+}
+
+function filterSummaryForPlayer(summaryData, playerName) {
+  const reportPlayers = getPrivateReportPlayers(playerName);
+  const wanted = reportPlayers.map(normalizeName);
+
+  const matches = (summaryData || []).filter(row =>
+    wanted.includes(normalizeName(row.player))
   );
+
+  if (matches.length === 0) {
+    console.log(`⚠️ No summary rows matched private report for "${playerName}". Wanted:`, reportPlayers);
+    console.log("Available summary players:", (summaryData || []).map(row => row.player));
+  }
+
+  return matches;
 }
 
 function filterActiveBetsForPlayer(data, playerName) {
+  const reportPlayers = getPrivateReportPlayers(playerName);
+  const wanted = reportPlayers.map(normalizeName);
   const allBets = data.bets || [];
 
   const filteredBets = allBets
-    .filter(bet => findMatchingPlayerKey(bet.players, playerName))
-    .map(bet => ({
-      ...bet,
-      players: {
-        [playerName]: true
+    .filter(bet => {
+      if (!bet.players || typeof bet.players !== "object") return false;
+
+      return Object.keys(bet.players).some(playerKey =>
+        wanted.includes(normalizeName(playerKey)) && bet.players[playerKey]
+      );
+    })
+    .map(bet => {
+      const cleanedPlayers = {};
+
+      for (const reportPlayer of reportPlayers) {
+        const matchingKey = Object.keys(bet.players || {}).find(playerKey =>
+          normalizeName(playerKey) === normalizeName(reportPlayer)
+        );
+
+        cleanedPlayers[reportPlayer] = matchingKey ? Boolean(bet.players[matchingKey]) : false;
       }
-    }));
+
+      return {
+        ...bet,
+        players: cleanedPlayers
+      };
+    });
+
+  if (filteredBets.length === 0) {
+    console.log(`⚠️ No active bets matched private report for "${playerName}". Wanted:`, reportPlayers);
+    console.log("Available bet player keys:");
+    for (const bet of allBets) {
+      console.log(bet.eventName, bet.players ? Object.keys(bet.players) : []);
+    }
+  }
 
   return {
-    players: [playerName],
+    players: reportPlayers,
     bets: filteredBets
   };
 }
