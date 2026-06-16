@@ -149,16 +149,38 @@ function findMatchingPlayerKey(playersObj, playerName) {
   ) || null;
 }
 
-function getPrivateReportPlayers(playerName) {
-  const players = [OWNER_PLAYER_NAME, playerName]
-    .map(p => String(p || "").trim())
-    .filter(Boolean);
 
-  return [...new Set(players)];
+
+function uniqueNamesByNormalize(names) {
+  const seen = new Set();
+  const result = [];
+
+  for (const name of names) {
+    const cleanName = String(name || "").trim();
+    if (!cleanName) continue;
+
+    const key = normalizeName(cleanName);
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    result.push(cleanName);
+  }
+
+  return result;
+}
+
+function getPrivateSummaryPlayers(playerName) {
+  // Profit/summary should ONLY show the player whose private channel this is.
+  return uniqueNamesByNormalize([playerName]);
+}
+
+function getPrivateBetPlayers(playerName) {
+  // Active bets should show you + the private channel player.
+  return uniqueNamesByNormalize([OWNER_PLAYER_NAME, playerName]);
 }
 
 function filterSummaryForPlayer(summaryData, playerName) {
-  const reportPlayers = getPrivateReportPlayers(playerName);
+  const reportPlayers = getPrivateSummaryPlayers(playerName);
   const wanted = reportPlayers.map(normalizeName);
 
   const matches = (summaryData || []).filter(row =>
@@ -166,7 +188,7 @@ function filterSummaryForPlayer(summaryData, playerName) {
   );
 
   if (matches.length === 0) {
-    console.log(`⚠️ No summary rows matched private report for "${playerName}". Wanted:`, reportPlayers);
+    console.log(`⚠️ No summary rows matched private summary for "${playerName}". Wanted:`, reportPlayers);
     console.log("Available summary players:", (summaryData || []).map(row => row.player));
   }
 
@@ -174,7 +196,7 @@ function filterSummaryForPlayer(summaryData, playerName) {
 }
 
 function filterActiveBetsForPlayer(data, playerName) {
-  const reportPlayers = getPrivateReportPlayers(playerName);
+  const reportPlayers = getPrivateBetPlayers(playerName);
   const wanted = reportPlayers.map(normalizeName);
   const allBets = data.bets || [];
 
@@ -182,6 +204,7 @@ function filterActiveBetsForPlayer(data, playerName) {
     .filter(bet => {
       if (!bet.players || typeof bet.players !== "object") return false;
 
+      // Include the bet if either Nokian OR the private-channel player is on it.
       return Object.keys(bet.players).some(playerKey =>
         wanted.includes(normalizeName(playerKey)) && bet.players[playerKey]
       );
@@ -189,6 +212,7 @@ function filterActiveBetsForPlayer(data, playerName) {
     .map(bet => {
       const cleanedPlayers = {};
 
+      // Only display Nokian + the private-channel player as columns.
       for (const reportPlayer of reportPlayers) {
         const matchingKey = Object.keys(bet.players || {}).find(playerKey =>
           normalizeName(playerKey) === normalizeName(reportPlayer)
@@ -204,8 +228,9 @@ function filterActiveBetsForPlayer(data, playerName) {
     });
 
   if (filteredBets.length === 0) {
-    console.log(`⚠️ No active bets matched private report for "${playerName}". Wanted:`, reportPlayers);
+    console.log(`⚠️ No active bets matched private bet report for "${playerName}". Wanted:`, reportPlayers);
     console.log("Available bet player keys:");
+
     for (const bet of allBets) {
       console.log(bet.eventName, bet.players ? Object.keys(bet.players) : []);
     }
