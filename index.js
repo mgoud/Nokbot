@@ -45,17 +45,24 @@ const client = new Client({
 function getDashboardChannelIds() {
   const ids = [];
 
-  if (CHANNEL_ID) ids.push(CHANNEL_ID);
+  if (CHANNEL_ID) {
+    ids.push(CHANNEL_ID);
+  }
 
   if (CHANNEL_IDS_RAW) {
     CHANNEL_IDS_RAW
       .split(",")
       .map(id => id.trim())
+      .map(id => id.replace(/^["']|["']$/g, "")) // removes accidental quotes
       .filter(Boolean)
       .forEach(id => ids.push(id));
   }
 
-  return [...new Set(ids)];
+  const uniqueIds = [...new Set(ids)];
+
+  console.log("📌 Full dashboard channels configured:", uniqueIds);
+
+  return uniqueIds;
 }
 
 function getPlayerChannelMap() {
@@ -609,20 +616,67 @@ async function runUpdate() {
 }
 
 // 6. DISCORD EVENTS
+let isUpdating = false;
+
+async function safeRunUpdate(reason = "scheduled") {
+  if (isUpdating) {
+    console.log(`⏳ Skipping ${reason} update because another update is already running.`);
+    return;
+  }
+
+  isUpdating = true;
+
+  try {
+    console.log(`🔁 Starting ${reason} update...`);
+    await runUpdate();
+  } catch (e) {
+    console.error(`❌ ${reason} update failed:`, e.message);
+  } finally {
+    isUpdating = false;
+  }
+}
+
 client.once(Events.ClientReady, () => {
   console.log(`✅ Online as ${client.user.tag}`);
 
-  runUpdate();
+  safeRunUpdate("startup");
 
-  setInterval(runUpdate, 60 * 60 * 1000);
+  setInterval(() => {
+    safeRunUpdate("scheduled hourly");
+  }, 60 * 60 * 1000);
 });
 
-client.on(Events.MessageCreate, m => {
+client.on(Events.MessageCreate, async m => {
   if (m.author.bot) return;
 
-  if (m.content === "!update") {
-    m.reply("Manual update triggered...");
-    runUpdate();
+  if (m.content.trim() === "!update") {
+    let replyMsg = null;
+
+    try {
+      replyMsg = await m.reply("Manual update triggered...");
+
+      // Wait until the dashboards/images are finished posting
+      await safeRunUpdate("manual");
+
+      // Delete the bot's "Manual update triggered..." reply
+      if (replyMsg) {
+        try {
+          await replyMsg.delete();
+        } catch (e) {
+          console.log(`⚠️ Could not delete bot update reply: ${e.message}`);
+        }
+      }
+
+      // Delete the user's !update message
+      try {
+        await m.delete();
+      } catch (e) {
+        console.log(`⚠️ Could not delete user !update message: ${e.message}`);
+      }
+
+    } catch (e) {
+      console.error("❌ Manual update command failed:", e.message);
+    }
   }
 });
 
